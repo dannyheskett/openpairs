@@ -15,6 +15,6 @@ license:
   the application font. License: SIL Open Font License, Version 1.1.
   See third_party/fonts/nunito/OFL.txt.
 
-openpairs is an original implementation of Klondike solitaire. It is not
-affiliated with, derived from, or endorsed by any other game or its rights
+openpairs is an original implementation of a matching-pairs card game. It is
+not affiliated with, derived from, or endorsed by any other game or its rights
 holders.

@@ -4,8 +4,8 @@
   application Java/Kotlin code beyond the immersive-mode Activity below. Android
   loads libopenpairs.so directly via android.app.NativeActivity (the
   "android.app.lib_name" meta-data names the .so without its "lib" prefix or
-  ".so" suffix). Portrait-locked to match the scaled seven-column board;
-  fullscreen with no title bar.
+  ".so" suffix). Rotates with the device (the board is re-fitted to the live
+  screen every frame); fullscreen with no title bar.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
           package="com.danheskett.openpairs">

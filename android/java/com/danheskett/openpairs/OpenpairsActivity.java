@@ -14,7 +14,7 @@ import android.view.WindowManager;
 /**
  * NativeActivity subclass whose only job is to make the game truly immersive:
  * hide the status and navigation bars and draw edge-to-edge, so there is no
- * reserved black band above the board. The C game code is unchanged and
+ * reserved black band above the game. The C game code is unchanged and
  * still loaded via the "android.app.lib_name" manifest meta-data.
  *
  * The theme (windowLayoutInDisplayCutoutMode=shortEdges) plus raylib's
@@ -38,9 +38,8 @@ public class OpenpairsActivity extends NativeActivity {
     }
 
     // Implemented in native (src/safe_area.c). Hands the window insets to the
-    // layout so the board stays clear of the camera cutout and the gesture bar.
-    // All four edges, because this game rotates: sideways the cutout and the
-    // bar sit on a side edge, not the top.
+    // layout so the game stays clear of the camera cutout and the gesture bar.
+    // All four edges: sideways, the cutout and the bar sit on a side edge.
     private native void nativeSetSafeInsets(int top, int bottom, int left, int right,
                                             int cutoutLeft, int cutoutRight);
 

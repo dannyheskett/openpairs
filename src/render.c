@@ -5,12 +5,10 @@
 #include "render.h"
 #include "gfx.h"
 #include "safe_area.h"
-#include "recorder.h"
+#include "menu.h"
+#include "present.h"
+#include "window.h"
 
-#if !defined(PLATFORM_IOS)
-#include <raylib.h>   // window / timing; absent on iOS, where UIKit owns both
-#include <rlgl.h>
-#endif
 
 #include <math.h>
 #include <stdio.h>
@@ -18,7 +16,6 @@
 // -std=c99 does not expose M_PI.
 #define OP_PI 3.14159265358979323846f
 
-#define SS 2   // recorder supersampling factor
 
 // --------------------------------------------------------------------------
 // Palette
@@ -335,91 +332,12 @@ static void draw_status(const Game* g, Layout l) {
 }
 
 // --------------------------------------------------------------------------
-// Menu + win panels
+// Menu + win panel (menu.c, the same in every game in this family)
 // --------------------------------------------------------------------------
-static Rectangle s_menu_item_rects[8];
-static int s_menu_item_count = 0;
-
-typedef struct {
-    int cx, px, py, panel_w, panel_h, radius;
-    int title_size, title_y, items_y, line_h, item_fs;
-} MenuLayout;
-
-static void draw_menu_panel(MenuLayout m, const char* title, const char* const* items,
-                            int count, int selected, int gap_before, bool capture) {
-    gfx_rect_rounded(m.px, m.py, m.panel_w, m.panel_h, 0.05f, MENU_BG);
-    gfx_rect_rounded_lines(m.px, m.py, m.panel_w, m.panel_h, 0.05f, TEXT_DIM);
-    gfx_text(title, m.cx - gfx_measure_text(title, m.title_size) / 2, m.title_y,
-             m.title_size, TEXT_LIGHT);
-
-    s_menu_item_count = capture ? ((count < 8) ? count : 8) : 0;
-    int y = m.items_y;
-    for (int i = 0; i < count; i++) {
-        if (gap_before == i) y += m.line_h;
-        const char* label = items[i];
-        int lw = gfx_measure_text(label, m.item_fs);
-        Color col = (i == selected) ? HILITE : TEXT_DIM;
-        if (i == selected) {
-            gfx_text(">", m.cx - lw / 2 - m.item_fs * 14 / 11, y, m.item_fs, HILITE);
-            gfx_text("<", m.cx + lw / 2 + m.item_fs * 7 / 11, y, m.item_fs, HILITE);
-        }
-        gfx_text(label, m.cx - lw / 2, y, m.item_fs, col);
-        if (capture && i < 8) {
-            s_menu_item_rects[i] = (Rectangle){ (float)m.px, (float)(y - (m.line_h - m.item_fs) / 2),
-                                                (float)m.panel_w, (float)m.line_h };
-        }
-        y += m.line_h;
-    }
-}
-
-static void draw_menu_scene(void* vctx, int view_w, int view_h);
-static void draw_board_scene(void* vctx, int view_w, int view_h);
-
-// --------------------------------------------------------------------------
-// Presentation: window + (when recording) an SSAA-supersampled fixed canvas.
-// --------------------------------------------------------------------------
-typedef void (*SceneFn)(void* ctx, int w, int h);
-
-#if !defined(PLATFORM_IOS)
-static RenderTexture2D rec_canvas, rec_super;
-#endif
-static bool rec_ready = false;
-
-static void emit(SceneFn fn, void* ctx) {
-    gfx_begin_frame();
-#if defined(PLATFORM_IOS)
-    fn(ctx, GetScreenWidth(), GetScreenHeight());
-#else
-    fn(ctx, GetScreenWidth(), GetScreenHeight());
-#endif
-    gfx_end_frame();
-
-#if !defined(PLATFORM_IOS)
-    if (recorder_active() && rec_ready) {
-        BeginTextureMode(rec_super);
-        // Blend colour normally but keep the target opaque: with the default
-        // blend every translucent draw lowers the texture's alpha and the
-        // downsample then composites it over nothing, so the video shows those
-        // pixels faded.
-        rlSetBlendFactorsSeparate(RL_SRC_ALPHA, RL_ONE_MINUS_SRC_ALPHA,
-                                  RL_ONE, RL_ONE_MINUS_SRC_ALPHA, RL_FUNC_ADD, RL_FUNC_ADD);
-        BeginBlendMode(BLEND_CUSTOM_SEPARATE);
-        rlPushMatrix();
-        rlScalef((float)SS, (float)SS, 1.0f);
-        fn(ctx, MIN_W, MIN_H);
-        rlPopMatrix();
-        EndBlendMode();
-        EndTextureMode();
-
-        BeginTextureMode(rec_canvas);
-        Rectangle src = {0, 0, (float)(SS * MIN_W), -(float)(SS * MIN_H)};
-        Rectangle dst = {0, 0, (float)MIN_W, (float)MIN_H};
-        DrawTexturePro(rec_super.texture, src, dst, (Vector2){0, 0}, 0.0f, WHITE);
-        EndTextureMode();
-
-        recorder_capture(&rec_canvas);
-    }
-#endif
+static MenuTheme menu_theme(void) {
+    MenuTheme t = { .background = FELT, .panel = MENU_BG, .edge = TEXT_DIM,
+                    .title = TEXT_LIGHT, .item = TEXT_DIM, .selected = HILITE };
+    return t;
 }
 
 // --------------------------------------------------------------------------
@@ -443,47 +361,9 @@ static void draw_board_scene(void* vctx, int view_w, int view_h) {
     for (int i = 0; i < g->card_count; i++) draw_card(g, l, i, i == ctx->cursor);
 
     if (ctx->panel_title) {
-        int base = (view_w < view_h) ? view_w : view_h;
-        int pw = base * 78 / 100, ph = base * 30 / 100;
-        int px = view_w / 2 - pw / 2, py = view_h / 2 - ph / 2;
-        gfx_rect(0, 0, view_w, view_h, (Color){0, 0, 0, 150});
-        gfx_rect_rounded(px, py, pw, ph, 0.08f, MENU_BG);
-        gfx_rect_rounded_lines(px, py, pw, ph, 0.08f, TEXT_DIM);
-        int ts = ph * 26 / 100, ss = ph * 13 / 100;
-        gfx_text(ctx->panel_title, view_w / 2 - gfx_measure_text(ctx->panel_title, ts) / 2,
-                 py + ph * 22 / 100, ts, HILITE);
-        gfx_text(ctx->panel_sub, view_w / 2 - gfx_measure_text(ctx->panel_sub, ss) / 2,
-                 py + ph * 62 / 100, ss, TEXT_DIM);
+        MenuTheme t = menu_theme();
+        menu_draw_notice(&t, view_w, view_h, ctx->panel_title, ctx->panel_sub);
     }
-}
-
-typedef struct {
-    const char* title; const char* const* labels;
-    int count, selected, gap_before;
-} MenuCtx;
-
-static void draw_menu_scene(void* vctx, int view_w, int view_h) {
-    MenuCtx* c = (MenuCtx*)vctx;
-    gfx_clear(FELT);
-
-    int ref = (view_w > view_h) ? view_w : view_h;   // chrome from the long edge
-    int line_h = ref / 20, item_fs = ref / 28;
-    int extra = (c->gap_before >= 0) ? 1 : 0;
-    int base = (view_w < view_h) ? view_w : view_h;
-    int panel_w = base * 82 / 100;
-
-    int title_size = ref / 16;
-    while (title_size > 12 && gfx_measure_text(c->title, title_size) > panel_w - line_h)
-        title_size -= 2;
-
-    int panel_h = title_size + line_h + (c->count + extra) * line_h + line_h * 2;
-    int px = view_w / 2 - panel_w / 2, py = (view_h - panel_h) / 2;
-    MenuLayout m = { .cx = view_w / 2, .px = px, .py = py, .panel_w = panel_w,
-                     .panel_h = panel_h, .radius = base / 40,
-                     .title_size = title_size, .title_y = py + line_h,
-                     .items_y = py + line_h + title_size + line_h,
-                     .line_h = line_h, .item_fs = item_fs };
-    draw_menu_panel(m, c->title, c->labels, c->count, c->selected, c->gap_before, true);
 }
 
 // --------------------------------------------------------------------------
@@ -492,7 +372,7 @@ static void draw_menu_scene(void* vctx, int view_w, int view_h) {
 void render_frame(const Game* g, int cursor) {
     flip_advance(g);
     BoardCtx ctx = { g, cursor, NULL, NULL };
-    emit(draw_board_scene, &ctx);
+    present(draw_board_scene, &ctx);
 }
 
 void render_win(const Game* g, int cursor) {
@@ -503,13 +383,13 @@ void render_win(const Game* g, int cursor) {
     const char* sub = "Press any key";
 #endif
     BoardCtx ctx = { g, cursor, "ALL PAIRS FOUND", sub };
-    emit(draw_board_scene, &ctx);
+    present(draw_board_scene, &ctx);
 }
 
 void render_menu(const char* title, const char* const* labels, int count,
                  int selected, int gap_before) {
-    MenuCtx ctx = { title, labels, count, selected, gap_before };
-    emit(draw_menu_scene, &ctx);
+    MenuTheme t = menu_theme();
+    menu_show(&t, title, labels, count, selected, gap_before);
 }
 
 int render_card_at(const Game* g, int x, int y) {
@@ -519,13 +399,6 @@ int render_card_at(const Game* g, int x, int y) {
 
 int render_board_top(const Game* g) {
     return layout_for(GetScreenWidth(), GetScreenHeight(), g->card_count).board_y;
-}
-
-int render_menu_hit_test(Vector2 p) {
-    for (int i = 0; i < s_menu_item_count; i++) {
-        if (CheckCollisionPointRec(p, s_menu_item_rects[i])) return i;
-    }
-    return -1;
 }
 
 int render_card_size(void) {
@@ -543,59 +416,11 @@ int render_pairs_that_fit(void) {
 // Lifecycle
 // --------------------------------------------------------------------------
 void render_init(void) {
-#if defined(PLATFORM_IOS)
-    // iOS: UIKit owns the window and the run loop; the Metal layer is attached
-    // by the app shell. Nothing to do here.
-#else
-#if defined(PLATFORM_ANDROID)
-    SetConfigFlags(FLAG_FULLSCREEN_MODE | FLAG_MSAA_4X_HINT);
-    InitWindow(0, 0, "openpairs");   // 0x0: render at the device's resolution
-#elif defined(PLATFORM_WEB)
-    SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
-    InitWindow(MIN_W, MIN_H, "openpairs");
-#else
-    SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
-    InitWindow(900, 700, "openpairs");
-    SetWindowMinSize(MIN_W, MIN_H);
-#endif
-    SetExitKey(KEY_NULL);   // Escape belongs to the game, not the window
-    SetTargetFPS(60);
-    gfx_font_init();
-#ifndef OP_TOUCH
-    rec_canvas = LoadRenderTexture(MIN_W, MIN_H);
-    rec_super  = LoadRenderTexture(SS * MIN_W, SS * MIN_H);
-    SetTextureFilter(rec_super.texture, TEXTURE_FILTER_BILINEAR);
-    rec_ready = true;
-#endif
-#endif // PLATFORM_IOS
+    window_init(GAME_NAME);
+    present_init();
 }
 
 void render_cleanup(void) {
-#if !defined(PLATFORM_IOS)
-    if (rec_ready) {
-        UnloadRenderTexture(rec_canvas);
-        UnloadRenderTexture(rec_super);
-        rec_ready = false;
-    }
-    CloseWindow();
-#endif
+    present_cleanup();
+    window_close();
 }
-
-void render_toggle_fullscreen(void) {
-#if defined(PLATFORM_ANDROID) || defined(PLATFORM_IOS)
-    (void)0;   // always fullscreen; nothing to toggle
-}
-#else
-    if (IsWindowFullscreen()) {
-        ToggleFullscreen();
-        SetWindowSize(900, 700);
-    } else {
-        int m = GetCurrentMonitor();
-        SetWindowSize(GetMonitorWidth(m), GetMonitorHeight(m));
-        ToggleFullscreen();
-    }
-}
-#endif
-
-bool render_window_should_close(void) { return WindowShouldClose(); }
-bool render_window_focused(void)      { return IsWindowFocused(); }
