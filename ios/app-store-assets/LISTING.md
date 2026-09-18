@@ -71,6 +71,15 @@ FREE AND OPEN SOURCE
 openpairs is open source. Read the code, report a bug, or build it yourself: https://github.com/dannyheskett/openpairs
 ```
 
+## App Review notes
+
+Sent to Apple's reviewer with every submission that has none yet
+(`scripts/asc_release.py` sets them, with the team's review contact).
+
+```
+Thank you very much for reviewing my game. openpairs is a matching-pairs game for young children: tap a card to turn it over and find the pairs. It needs no account, sign-in or network access. It runs on iPhone and iPad in either orientation; tapping the top of the screen opens the menu, where Options sets the board size.
+```
+
 ## App information
 
 - **Category (primary):** Games -> Family
