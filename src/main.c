@@ -6,6 +6,8 @@
 #include "recorder.h"
 #include "app.h"
 #include "tick.h"
+#include "menu.h"
+#include "window.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -141,6 +143,16 @@ static void move_cursor(AppCtx* c, int dx, int dy) {
     }
 }
 
+// A menu row picked by the pointer: a completed tap, or a mouse click.
+static bool menu_pointer(const Input* in, Vector2* p) {
+    if (in->touch_tap) { *p = (Vector2){in->tap_x, in->tap_y}; return true; }
+    if (in->left_pressed) {
+        *p = (Vector2){(float)in->mouse_x, (float)in->mouse_y};
+        return true;
+    }
+    return false;
+}
+
 // One iteration of the game loop. `arg` is an AppCtx* (void* to match the
 // emscripten_set_main_loop callback signature).
 static void frame_step(void* arg) {
@@ -151,8 +163,12 @@ static void frame_step(void* arg) {
     c->prev_time = now;
     if (c->state != STATE_PLAYING) sim_clock_reset(&c->clock);
 
+    // Sampled every frame, not only while playing, so a stale "was focused"
+    // cannot survive a menu visit and fire on the first frame of the next game.
+    bool focus_lost = window_focus_lost();
+
     Input in = input_poll();
-    if (in.fullscreen_toggle) render_toggle_fullscreen();
+    if (in.fullscreen_toggle) window_toggle_fullscreen();
 
     bool resumable = (c->game != NULL && !game_is_over(c->game));
     const char* labels[MAX_MENU_ITEMS];
@@ -170,10 +186,9 @@ static void frame_step(void* arg) {
         if (in.menu_up)   { c->selected = (c->selected + menu_count - 1) % menu_count; sound_play(SFX_MENU_MOVE); }
         if (in.menu_down) { c->selected = (c->selected + 1) % menu_count;              sound_play(SFX_MENU_MOVE); }
         bool do_select = in.select_pressed;
-        if (in.touch_tap || in.left_pressed) {
-            Vector2 p = in.touch_tap ? (Vector2){in.tap_x, in.tap_y}
-                                     : (Vector2){(float)in.mouse_x, (float)in.mouse_y};
-            int hit = render_menu_hit_test(p);
+        Vector2 p;
+        if (menu_pointer(&in, &p)) {
+            int hit = menu_hit_test(p);
             if (hit >= 0 && hit < menu_count) { c->selected = hit; do_select = true; }
         }
         if (do_select) {
@@ -202,10 +217,9 @@ static void frame_step(void* arg) {
         if (in.menu_down) { c->selected = (c->selected + 1) % opt_count;             sound_play(SFX_MENU_MOVE); }
         int dir = (in.menu_right ? 1 : 0) - (in.menu_left ? 1 : 0);
         bool do_select = in.select_pressed;
-        if (in.touch_tap || in.left_pressed) {
-            Vector2 p = in.touch_tap ? (Vector2){in.tap_x, in.tap_y}
-                                     : (Vector2){(float)in.mouse_x, (float)in.mouse_y};
-            int hit = render_menu_hit_test(p);
+        Vector2 p;
+        if (menu_pointer(&in, &p)) {
+            int hit = menu_hit_test(p);
             if (hit >= 0 && hit < opt_count) { c->selected = hit; do_select = true; }
         }
         if (do_select && c->selected == OPT_BACK) {
@@ -222,11 +236,9 @@ static void frame_step(void* arg) {
     case STATE_PLAYING: {
         Game* g = c->game;
         if (!g) { c->state = STATE_MENU; break; }
-#ifdef OP_TOUCH
-        // Backgrounded (Android / iOS) or the browser tab lost focus: fall back
-        // to the menu. The game stays resumable.
-        if (!render_window_focused()) { c->state = STATE_MENU; c->selected = 0; break; }
-#endif
+        // Losing focus (app backgrounded, tab hidden, window deactivated)
+        // returns to the menu; the game stays resumable.
+        if (focus_lost) { c->state = STATE_MENU; c->selected = 0; break; }
         if (in.escape_pressed) { c->state = STATE_MENU; c->selected = 0; break; }
 
         game_step_begin(g);
@@ -295,17 +307,17 @@ static void frame_step(void* arg) {
 
 // iOS: UIKit provides main() and the run loop, so the main() below is compiled
 // out. The app shell (ios/ios_main.mm) sets up the Metal layer, calls
-// op_app_init() once, then op_app_frame() from a CADisplayLink each frame.
+// app_init() once, then app_frame() from a CADisplayLink each frame.
 static AppCtx ios_ctx;
 
-void op_app_init(void) {
+void app_init(void) {
     srand((unsigned int)time(NULL));
     render_init();   // no-op on iOS (UIKit owns the window)
     sound_init();
     app_ctx_init(&ios_ctx);
 }
 
-void op_app_frame(void) { frame_step(&ios_ctx); }
+void app_frame(void) { frame_step(&ios_ctx); }
 
 #else
 
@@ -333,7 +345,7 @@ int main(int argc, char** argv) {
 #ifdef PLATFORM_WEB
     emscripten_set_main_loop_arg(frame_step, &ctx, 0, 1);
 #else
-    while (!render_window_should_close() && !ctx.quit) {
+    while (!window_should_close() && !ctx.quit) {
         frame_step(&ctx);
     }
     recorder_stop();

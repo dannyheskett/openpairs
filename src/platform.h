@@ -1,6 +1,14 @@
 #ifndef OPENPAIRS_PLATFORM_H
 #define OPENPAIRS_PLATFORM_H
 
+// The game's name: window title and recording file prefix.
+#define GAME_NAME "openpairs"
+
+// Recording size (recorder.c): the smallest desktop window. Both are multiples
+// of 16 for the H.264 encoder.
+#define REC_W 640
+#define REC_H 480
+
 // OP_TOUCH selects the touch frontend: tap-driven cards and menus, and no
 // on-screen chrome that assumes a mouse. It is enabled on Android, iOS, and the
 // WebAssembly build (which targets mobile browsers but also accepts a mouse and
@@ -16,7 +24,6 @@
 // A grid of cards reflows to any window, so one adaptive layout serves the
 // desktop, both phone orientations, and an iPad: src/layout.c derives every
 // metric from the live view size each frame, and rotating simply re-fits the
-// same board. Desktop keeps a minimum window size (MIN_W/MIN_H in render.h) so
-// the cards never fall below the readable floor.
+// same board. A window too small for a level caps it, as a small phone does.
 
 #endif // OPENPAIRS_PLATFORM_H

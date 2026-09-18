@@ -1,5 +1,5 @@
-#ifndef OPENPAIRS_OK_TYPES_H
-#define OPENPAIRS_OK_TYPES_H
+#ifndef OP_TYPES_H_INCLUDED
+#define OP_TYPES_H_INCLUDED
 
 // Geometry / colour types and the handful of raylib query functions the shared
 // game code uses, decoupled from raylib so the iOS build (which links no raylib)
@@ -71,4 +71,4 @@ bool    WindowShouldClose(void);
 
 #endif // PLATFORM_IOS
 
-#endif // OPENPAIRS_OK_TYPES_H
+#endif // OP_TYPES_H_INCLUDED

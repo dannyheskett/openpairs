@@ -1,5 +1,5 @@
-#ifndef OPENPAIRS_SAFE_AREA_H
-#define OPENPAIRS_SAFE_AREA_H
+#ifndef SAFE_AREA_H
+#define SAFE_AREA_H
 
 // Display-cutout and system-bar insets, in device pixels. The Android Activity
 // reads the window insets and pushes them here over JNI; the layout keeps the
@@ -19,4 +19,4 @@ typedef struct {
 
 SafeArea safe_area_get(void);
 
-#endif // OPENPAIRS_SAFE_AREA_H
+#endif // SAFE_AREA_H
